@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>canvas-barrage</title>
+  <style>
+    #container {
+      text-align: center;
+    }
+    #content {
+      width: 640px;
+      margin: auto;
+      position: relative;
+    }
+    #canvas {
+      position: absolute;
+    }
+    input {
+      vertical-align: middle;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <h1>This is canvas brrage</h1>
+    <div id="content">
+      <canvas id="canvas"></canvas>
+      <video id="video" width="640" height="380" controls
+        src="D:\360Downloads\行尸走肉.The.Walking.Dead.S02E05.Chi_Eng.Webrip.AC3.1024X576.x264-YYeTs人人影视.mkv"></video>
+    </div>
+    <input type="text" id="text"><button id="add">添加弹幕</button><br>
+    <input type="color" id="color"><input id="range" type="range" max="40" min="20">
+  </div>
+
+  <script>
+    let $ = document.querySelector.bind(document)
+    let canvas = $('#canvas')
+    let video = $('#video')
+
+    class Barrage {
+      constructor(obj, ctx) {
+        this.value = obj.value
+        this.time = obj.time
+        this.obj = obj
+        this.ctx = ctx
+      }
+
+      init() {
+        this.opacity = this.obj.opacity || this.ctx.opacity
+        this.color = this.obj.color || this.ctx.color
+        this.fontSize = this.obj.fontSize || this.ctx.fontSize
+        this.speed = this.obj.speed || this.ctx.speed
+
+        let span = document.createElement('span')
+        span.innerText = this.value
+        span.style.font = this.fontSize + 'px "Microsoft YaHei"'
+        span.style.position = 'absolute'
+        document.body.appendChild(span)
+
+        this.width = span.clientWidth
+        document.body.removeChild(span)
+
+        this.x = this.ctx.canvas.width
+        this.y = this.ctx.canvas.height * Math.random() 
+        if (this.y < this.fontSize) {
+          this.y = this.fontSize
+        }
+        if (this.y > this.ctx.canvas.height - this.fontSize) {
+          this.y = this.ctx.canvas.height - this.fontSize
+        }
+      }
+
+      render() {
+        this.ctx.context.font = this.fontSize + 'px Microsoft YaHei'
+        this.ctx.context.fillStyle = this.color
+        this.ctx.context.fillText(this.value, this.x, this.y)
+      }
+    }
+
+    class CanvasBarrage {
+      constructor(canvas, video, options = {}) {
+        if (!canvas || !video) return
+        this.canvas = canvas
+        this.video = video
+        let defaultOptions = {
+          fontSize: 20,
+          color: 'gold',
+          speed: 2,
+          opacity: .3,
+          data: []
+        }
+
+        Object.assign(this, defaultOptions, options)
+
+        this.context = canvas.getContext('2d')
+        this.canvas.width = video.clientWidth
+        this.canvas.height = video.clientHeight
+
+        this.isPaused = true
+        this.barrages = this.data.map(obj => new Barrage(obj, this))
+        this.render()
+      }
+
+      renderBarrage() {
+        let time = this.video.currentTime
+        this.barrages.forEach(barrage => {
+          if (!barrage.flag && time >= barrage.time) {
+            if (!barrage.isInited) {
+              barrage.init()
+              barrage.isInited = true
+            }
+            barrage.x -= barrage.speed
+            
+            barrage.render()
+            if (barrage.x <= barrage.width * -1) {
+              barrage.flag = true
+            }
+          }
+        })        
+      }
+
+      render() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.renderBarrage()
+        if (this.isPaused === false) {
+          requestAnimationFrame(this.render.bind(this))
+        }
+      }
+
+      add(obj) {
+        this.barrages.push(new Barrage(obj, this))
+      }
+
+      reset() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        let time = this.video.currentTime
+        this.barrages.forEach(barrage => {
+          barrage.flag = false
+          if (time <= barrage.time) {
+            barrage.isInited = false
+          } else {
+            barrage.flag = true
+          }
+        })
+      }
+    }
+
+    let canvasBarrage
+    let socket = new WebSocket('ws://localhost:3000')
+    
+    socket.onopen = function () {
+      socket.onmessage = function (e) {
+        let message = JSON.parse(e.data)
+        if (message.type === 'INIT') {
+          canvasBarrage = new CanvasBarrage(canvas, video, {
+            data: message.data
+          })
+        } else if (message.type === 'ADD') {
+          canvasBarrage.add(message.data)
+        }
+      }
+    }
+
+    video.addEventListener('play', function () {
+      canvasBarrage.isPaused = false
+      canvasBarrage.render()
+    })
+
+    video.addEventListener('pause', function () {
+      canvasBarrage.isPaused = true
+    })
+
+    $('#add').addEventListener('click', function () {
+      let value = $('#text').value
+      let color = $('#color').value
+      let fontSize = $('#range').value
+      let time = video.currentTime
+      let obj = { time, value, color, fontSize }
+      // canvasBarrage.add(obj)
+      socket.send(JSON.stringify(obj))
+    })
+    
+    video.addEventListener('seeked', function () {
+      canvasBarrage.reset()
+    })
+  </script>
+</body>
+</html>
